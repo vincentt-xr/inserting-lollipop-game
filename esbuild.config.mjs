@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import stylePlugin from "esbuild-style-plugin";
+import { resolveSdkLinks } from "./scripts/sdk-link.mjs";
 
 const require = createRequire(import.meta.url);
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
@@ -37,21 +38,7 @@ function pkgDir(localRequire, pkg) {
 }
 
 const SDK_PKG = "@vincentt-sdks/xr-sdk";
-
-// Dev-only SDK link: `SDK_LINK=1 npm run dev` resolves the SDK to a local xr-sdk
-// checkout (its built dist/) instead of the pinned tarball, so SDK edits show up
-// in the app's dev loop without publish→repin→reinstall. Run `pnpm build:watch`
-// in xr-sdk alongside so dist/ rebuilds on change. `SDK_LINK=1` uses the sibling
-// `../xr-sdk`; `SDK_LINK=/abs/path/to/xr-sdk` overrides. Resolves to the package
-// DIRECTORY (esbuild reads its exports → dist/main.js), and the SINGLETONS pins
-// above keep the linked SDK from dragging a second React/three. Never affects the
-// publish build (SDK_LINK unset) — the tarball remains the source of truth.
-function linkedSdkDir() {
-  const link = process.env.SDK_LINK;
-  if (!link) return undefined;
-  const dir = link === "1" ? path.resolve(repoRoot, "..", "xr-sdk") : path.resolve(link);
-  return dir;
-}
+const SDK_DEBUG_UI_PKG = `${SDK_PKG}/debug-ui`;
 
 export function aliasMap(root = repoRoot) {
   const localRequire = createRequire(path.join(root, "package.json"));
@@ -63,10 +50,23 @@ export function aliasMap(root = repoRoot) {
       // Not installed (e.g. optional dep) — skip; esbuild resolves normally.
     }
   }
-  const sdkLink = linkedSdkDir();
+  const sdkLinks = resolveSdkLinks(process.env.SDK_LINK);
+  const defaultLocalSdkDir = path.resolve(root, "..", "vincentt-xr-sdk");
+  let installedSdkDir;
+  try {
+    installedSdkDir = pkgDir(localRequire, SDK_PKG);
+  } catch {
+    installedSdkDir = path.dirname(path.dirname(localRequire.resolve(SDK_PKG)));
+  }
+  const sdkRoot = process.env.SDK_LINK
+    ? process.env.SDK_LINK === "1"
+      ? defaultLocalSdkDir
+      : path.resolve(process.env.SDK_LINK)
+    : defaultLocalSdkDir;
   return {
     ...singletons,
-    ...(sdkLink ? { [SDK_PKG]: sdkLink } : {}),
+    [SDK_DEBUG_UI_PKG]: path.join(sdkRoot, "dist", "debug-ui.js"),
+    ...(sdkLinks ? { [SDK_PKG]: sdkLinks.main } : { [SDK_PKG]: installedSdkDir }),
   };
 }
 
@@ -105,6 +105,9 @@ export function buildOptions({ mode = "production", root = repoRoot } = {}) {
       "process.env.NODE_ENV": JSON.stringify(
         prod ? "production" : "development",
       ),
+      "import.meta.env.DEV": JSON.stringify(!prod),
+      "import.meta.env.PROD": JSON.stringify(prod),
+      "import.meta.env.VITE_PREVIEW": JSON.stringify(process.env.VITE_PREVIEW ?? ""),
       // The template's _core config helpers read Vite's import.meta.env, which
       // esbuild doesn't provide — inject a populated object so the app mounts.
       "import.meta.env": JSON.stringify({
@@ -112,6 +115,7 @@ export function buildOptions({ mode = "production", root = repoRoot } = {}) {
         PROD: prod,
         DEV: !prod,
         BASE_URL: "/",
+        VITE_PREVIEW: process.env.VITE_PREVIEW ?? "",
       }),
     },
     plugins: [

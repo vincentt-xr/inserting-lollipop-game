@@ -1,57 +1,73 @@
-# v2-template
+# Inserting Lollipop Game Template
 
-The Vincentt v2 starter app. Every v2 project is forked from this template into
-its own repo and edited turn-by-turn by an AI agent. It is a real React + R3F +
-[Vincentt XR SDK](../xr-sdk) WebXR app, bundled by esbuild (the same toolchain
-powers the in-editor preview and the published build).
+A remixable Vincentt XR candy game built with React, React Three Fiber, and the Vincentt XR SDK. Show a peace sign to launch lollipops into the rotating candy wheel. Reach the target score before time runs out, then show a fist to reset.
 
-## Shape
+## Run locally
 
+```bash
+pnpm install
+pnpm dev
+pnpm typecheck
+pnpm lint
+pnpm build
 ```
+
+## Controls and game flow
+
+- Idle: show a peace sign to start.
+- Running: each peace-sign detection launches the active lollipop.
+- Success: the lollipop sticks to the wheel and the score increases.
+- Collision or timeout: the round ends.
+- End screen: show a closed fist to reset the round.
+
+The game uses the `victory` and `closed_fist` gesture names from the SDK. Gesture arm delays prevent a gesture held during a state transition from firing twice.
+
+## Remix guide
+
+Start with [`src/lollipop/gameConfig.ts`](./src/lollipop/gameConfig.ts):
+
+- `durationSeconds`: round length.
+- `targetScore`: successful insertions needed to win.
+- `gesture`: start/shoot and reset gesture names.
+- `animation`: roulette, spiral, launch, snap, and feedback timing.
+- `hud.timerUrgencySeconds`: when the timer becomes urgent.
+
+Customize authored scene placement in [`src/lollipop/settings.ts`](./src/lollipop/settings.ts): layer positions, sizes, rotations, render order, image settings, and collision hitboxes.
+
+For presentation changes, edit `src/lollipop/LollipopLayer.tsx`:
+
+- `LollipopImageLayer` adapts authored 2D image layers to the SDK.
+- `CandyHud` owns score, progress, timer, instruction, feedback, and end-screen HTML styling and animations.
+- Do not reintroduce SDK `ScreenText`; the runtime HUD is plain HTML rendered through drei's `Html` bridge.
+
+Replace artwork and sounds in `public/images/` and `public/audios/`. Keep paths in `settings.ts` and `LollipopGame.tsx` synchronized when renaming files.
+
+## Project structure
+
+```text
 src/
-  main.tsx            mount — never edited
-  App.tsx             protected shell: XRProvider + AspectRatioContainer +
-                      XRScene + media-source binding, camera, lighting,
-                      VideoBackground, PreviewAnchors — never edited
-  Scene.tsx           the agent's surface: add SDK components and R3F
-                      primitives here
-  PreviewAnchors.tsx  editor-preview integration — never edited
+  App.tsx                 protected XR shell
+  Scene.tsx               camera background and game composition
+  gesture.ts              reusable gesture-hold helper
+  overlay.tsx             generic HTML overlay primitives
+  lollipop/
+    gameConfig.ts         primary remix configuration
+    LollipopGame.tsx      state, gestures, collisions, scoring, timing
+    LollipopLayer.tsx     image adapter and Candy HUD
+    settings.ts           authored 720x1280 scene layout
+public/
+  images/                 candy artwork
+  audios/                 game sounds
 ```
 
-See `AGENTS.md` and `GROUNDING.md` for the API reference and how to author scenes.
+`App.tsx`, `main.tsx`, and the preview shell are runtime infrastructure. Remix game behavior in `lollipop/` and replace assets in `public/`.
 
-## Develop
+## Validation checklist
 
-```
-npm install
-npm run dev          # esbuild dev server on :5173
-npm run typecheck    # tsc --noEmit
-npm run build        # production bundle to dist/
-```
-
-## Releasing this template
-
-`main` is active dev. New projects are NOT seeded from `main` — they seed from a
-promoted version, so an in-progress `main` commit never reaches a creator's project
-until it is deliberately released.
-
-- **`main`** — where changes land (PRs). Not seeded directly.
-- **`release`** — only ever fast-forwards to a `v2-template-vX.Y.Z`-tagged commit.
-  The platform's gitea mirror uses this as its default branch, and gitea
-  `/generate` copies the default branch — so `release` HEAD is what new projects
-  get.
-
-**To promote a release:**
-
-```
-git tag v2-template-vX.Y.Z        # on the commit to release (on main)
-git checkout release
-git merge --ff-only v2-template-vX.Y.Z
-git push origin main release --tags
+```bash
+pnpm typecheck
+pnpm lint
+pnpm build
 ```
 
-`release` must ALWAYS be a fast-forward of a tagged commit — never a merge commit,
-never a non-tagged HEAD. After pushing, the platform side binds dependencies to the
-same tag (set `V2_TEMPLATE_VERSION`, restart the worker, reinstall the shared
-template node_modules); see the backend deploy runbook's "Promoting a template
-release" for the full procedure.
+Manually verify the idle instruction, peace-sign launch, score/progress updates, urgent timer, collision/end screen, and fist reset on the portrait preview.

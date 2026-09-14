@@ -25,6 +25,33 @@ You are editing a real WebXR/AR app.
 
 **Do not go looking for SDK types or source.** `GROUNDING.md` is the contract; `node_modules` is off-limits and reads there are denied by the platform. Do NOT read, glob, or grep under `node_modules/` — the installed `@vincentt-sdks/*` package (its `dist/*.d.ts`, the minified `main.js`/`main.cjs` bundle, etc.) is NOT a source of truth. The published types can lag or omit props, and the bundle is minified; reverse-engineering it is unreliable and wastes the turn. If an API isn't in GROUNDING.md, treat it as not existing — do not try to discover it by introspecting the package. If GROUNDING.md genuinely lacks something you need, say so and ask, rather than spelunking the filesystem.
 
+## Layout placement bridge
+
+During local Effect House transfer and scene layout tuning, use the dev-only panels from `@vincentt-sdks/xr-sdk/debug-ui` to bridge object placement between the scene, the human reviewer, and the agent. The agent may add `LayerPanel`, `ScreenImageSettingsPanel`, and `ScreenTextSettingsPanel` while the scene is being laid out. The human adjusts each scene object's transformation/material/text settings in the panel, clicks the panel's copy button, and pastes the copied payload back to the agent. The payload includes the scene object `name`, `transform`, and component-specific data such as image/material settings or text content/style/layout. The agent then updates the matching scene object layout in code.
+
+For Effect House 2D object transfer, prefer `transform.coordinateSpace: "canvas"` with `transform.canvasSize: { "width": 720, "height": 1280 }`. Keep Effect House Screen Transform `position` and `size` values as canvas pixels. Do not pre-normalize them in project code; the SDK resolves canvas units into the active screen-space render rectangle. Screen Transform `size` is the bounding rectangle, not the source image's natural pixel size.
+
+These debug panels are temporary authoring tools only. Remove `@vincentt-sdks/xr-sdk/debug-ui` imports and all mounted debug panels before the app is finished for handoff or production.
+
+Debug UI contains real HTML (`div`, `button`, `span`, `input`, `select`, `svg`). Do not render it directly inside the R3F canvas tree. Mount debug panels through a separate React DOM root or an approved HTML bridge so the canvas never receives raw HTML elements.
+
+## Lollipop game implementation notes
+
+- `src/lollipop/settings.ts` owns authored layer placement. Keep values in
+  Effect House canvas units (`720 x 1280`), not normalized units.
+- `src/lollipop/LollipopGame.tsx` owns gameplay state, gesture shooting,
+  roulette rotation, collision, audio, score, timer, and result state.
+- Peace sign (`victory`) is the shot gesture. A continuous peace sign should
+  produce one shot only; release/re-arm before the next shot.
+- `targetLollipop` is a hidden placement source, not a visible idle object in
+  the finished game.
+- `targetLollipopStickHitbox` and `targetLollipopHeadHitbox` are hidden
+  authored null/guide layers used for collision. Keep them in settings even
+  though they are not rendered in the final scene.
+- Debug panels were used during transfer and have been removed from the active
+  scene. Re-add them only for layout tuning, then remove them again before
+  handoff.
+
 ## Talking to the creator
 
 Everything you write outside a tool call is shown to the creator in the chat as your reply. They are a non-technical app creator, not an engineer watching you work. Most of your audience cannot read code and does not know the SDK. Write every visible reply as if explaining to a smart friend who has never seen a line of code. So:

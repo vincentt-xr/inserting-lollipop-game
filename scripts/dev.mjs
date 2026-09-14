@@ -14,6 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import esbuild from "esbuild";
 import { buildOptions } from "../esbuild.config.mjs";
+import { formatSdkLinks } from "./sdk-link.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const distDir = path.join(root, "dist");
@@ -58,7 +59,6 @@ const { host, port: actualPort } = await ctx.serve({
 });
 console.log(`dev server: http://${host || "127.0.0.1"}:${actualPort}`);
 if (process.env.SDK_LINK) {
-  const linked =
-    process.env.SDK_LINK === "1" ? "../xr-sdk" : process.env.SDK_LINK;
-  console.log(`SDK linked → ${linked} (run \`pnpm build:watch\` there)`);
+  const linked = formatSdkLinks(process.env.SDK_LINK);
+  console.log(`SDK linked → main: ${linked?.main} (run \`pnpm build:watch\` there)`);
 }

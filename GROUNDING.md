@@ -1,19 +1,91 @@
 # Vincentt Project — Template Grounding
 
 This file documents the **template-local helpers** that live in this project's
-`src/` (capture, gesture-hold, HTML overlays, sprite-sheet animation), plus
-project-shape notes and common patterns.
+`src/` (gesture-hold, HTML overlays, and the Candy Arcade HUD), plus project-shape
+notes and remix patterns.
 
-The **SDK component/hook API** (`@vincentt-sdks/xr-sdk` — trackers, screen-space
-layout, `<TextLabel>`, `<Panel>`, mesh/texture conventions) is documented in the
+The **SDK component/hook API** (`@vincentt-xr/sdk` — trackers, screen-space
+layout, `<ScreenText>`, `<TextLabel>`, `<Panel>`, mesh/texture conventions) is documented in the
 **SDK grounding**, which ships with the SDK. In a running project the platform
 combines the SDK grounding with this file into the `GROUNDING.md` the agent reads,
 so the agent sees one complete reference. (Developing locally across both repos?
 The SDK API reference is `xr-sdk/GROUNDING.md` in your sibling checkout.)
 
-Edit `src/Scene.tsx`. Compose the SDK components/hooks with the template helpers
+## Project-local SDK workflow
+
+This `v2-template-inserting-lollipop-game` copy was developed against a sibling
+local SDK checkout. Use link mode while co-developing or testing local SDK
+changes:
+
+```sh
+cd v2-template-inserting-lollipop-game
+SDK_LINK=1 npm run dev
+```
+
+`SDK_LINK=1` resolves the local SDK bundle from the sibling SDK checkout.
+If the SDK source changes, rebuild/watch the SDK in its own terminal before
+testing this app. The app code should still import SDK APIs normally:
+`import { ... } from "@vincentt-xr/sdk"`.
+
+## Lollipop scene notes
+
+The lollipop game is an Effect House 2D scene transfer from
+`.temp/EH_scenes/Game02_lollipopGame.scene`. See `scene.md` for the detailed
+object map and final tuned values.
+
+- Use `src/lollipop/settings.ts` as the layer/layout source of truth.
+- Keep Effect House-style 720x1280 screen values directly:
+  `coordinateSpace: "canvas"` and `canvasSize: { width: 720, height: 1280 }`.
+- Do not pre-normalize Screen Transform values in this project.
+- `targetLollipop` is a hidden authored placement source for insertion position,
+  hit radius, and collision-region offsets.
+- `targetLollipopStickHitbox` and `targetLollipopHeadHitbox` are hidden authored
+  null/guide layers. They define collision regions and are not rendered in the
+  final scene.
+- Shooting uses peace sign (`victory`) through `GestureTracker` +
+  `useGestureHold({ gesture: "victory", holdMs: 0 })`. A continuous peace sign
+  fires once and must be released before another shot.
+
+The finished runtime HUD uses plain HTML rendered through drei's `<Html>` bridge.
+Do not reintroduce SDK `<ScreenText>` for score, timer, instructions, feedback, or
+the end screen: the project previously mixed SDK coordinate systems and made text
+size/visibility difficult to remix. `CandyHud` in `src/lollipop/LollipopLayer.tsx`
+is the single runtime HUD surface.
+
+Use `<ScreenImage>` from the SDK for 2D screen-space image objects such as
+logos, stickers, frames, badges, and placeholders. It owns its `ScreenTransform`,
+so pass `anchors` directly. With no `source`/`src`, it renders the SDK-owned
+square default image.
+
+Edit `src/Scene.tsx` and `src/lollipop/gameConfig.ts`. Compose the SDK components/hooks with the template helpers
 below and R3F primitives. There is no lifecycle DSL — per-frame logic is R3F
 `useFrame`, per-mount setup is `useEffect`, both inside the scene component.
+
+---
+
+## Lollipop remix contract
+
+- `src/lollipop/gameConfig.ts` is the primary gameplay and animation tuning surface.
+- `src/lollipop/settings.ts` is the authored 720x1280 image/layout source of truth.
+- `LollipopGame.tsx` owns state, gestures, scoring, timing, collision checks, and feedback events.
+- `LollipopLayer.tsx` owns the SDK image adapter and the HTML `CandyHud` presentation.
+- Image layers stay inside `<ScreenSpaceUI>`; `CandyHud` stays outside it and renders through `<Html>`.
+- HUD text is CSS pixels and viewport-relative HTML. It is not SDK canvas text and must not be pre-normalized as a ScreenText transform.
+- Change gameplay values in `gameConfig.ts` before changing logic constants in `LollipopGame.tsx`.
+
+### Game states
+
+`idle` shows the animated peace-sign instruction. `running` accepts `victory`,
+launches lollipops, updates score/progress, and shows short feedback. `ended`
+shows the result card and enables only `closed_fist` reset. Collision math uses
+the hidden authored target and hitbox layers from `settings.ts`; HUD changes must
+not alter those layers.
+
+### CandyHud inputs
+
+`CandyHud` receives `status`, `score`, `targetScore`, `timeLeft`, `feedback`,
+`feedbackVersion`, and `animationNow`. Keep it presentation-only: it should not
+perform collision checks, mutate game state, or read gesture state directly.
 
 ---
 
@@ -22,7 +94,7 @@ below and R3F primitives. There is no lifecycle DSL — per-frame logic is R3F
 `<GestureTrigger>` (SDK) is one-shot. `useGestureHold` fires after a gesture has been **held** for `holdMs`, debounced so a stray misclassified frame can't latch it. It re-arms when the gesture is released, so the next hold fires again. Needs a `<GestureTracker />` (SDK) mounted.
 
 ```tsx
-import { GestureTracker } from "@vincentt-sdks/xr-sdk";
+import { GestureTracker } from "@vincentt-xr/sdk/tracking";
 import { useGestureHold } from "./gesture";
 
 <GestureTracker />;
@@ -53,7 +125,7 @@ Trigger-agnostic capture primitives. Wire them to whatever the project uses — 
 
 ```tsx
 import { usePhotoCapture, saveToDevice } from "../capture";
-import { GestureTracker, GestureTrigger } from "@vincentt-sdks/xr-sdk";
+import { GestureTracker, GestureTrigger } from "@vincentt-xr/sdk/tracking";
 
 const { capture, latest } = usePhotoCapture();
 

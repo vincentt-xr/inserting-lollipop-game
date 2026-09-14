@@ -1,5 +1,5 @@
 {
-  "name": "v2-template",
+  "name": "v2-template-inserting-lollipop-game",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -14,6 +14,8 @@
     "@react-three/fiber": "8.18.0",
     "@vincentt-sdks/xr-app-utilities": "^1.4.0",
     "@vincentt-sdks/xr-sdk": "https://cdn.vincentt.studio/sdks/xr/xr-sdk-v1.0.0-rc-17/xr-sdk.tgz",
+    "@vincentt-xr/sdk": "2.0.0-alpha.5",
+    "onnxruntime-web": "^1.29.0",
     "qrcode.react": "4.2.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
@@ -26,6 +28,7 @@
     "@types/three": "0.173.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
+    "@vincentt-xr/cli": "^0.2.0",
     "esbuild": "^0.28.0",
     "esbuild-style-plugin": "^1.6.3",
     "eslint": "^8.2.0",

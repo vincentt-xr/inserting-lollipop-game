@@ -3,35 +3,18 @@ import { useEffect } from "react";
 import {
   XRProvider,
   XRScene,
-  VideoBackground,
-  useXRContext,
   XRMediaSource,
-  useXRReady,
-  useXRError,
-} from "@vincentt-sdks/xr-sdk";
+} from "@vincentt-xr/sdk";
+import { useXRContext, useXRError, useXRReady } from "@vincentt-xr/sdk/low-level";
 import { AspectRatioContainer } from "@vincentt-sdks/xr-app-utilities";
 import { PerspectiveCamera } from "@react-three/drei";
 
 import { Scene } from "./Scene";
 import { PreviewAnchors } from "./PreviewAnchors";
 
-// Fallback clip for the "video" source when no VITE_INPUT_URL is supplied.
-// Referenced by URL (not bundled) so it stays out of the published bundle —
-// publish runs the webcam default and never hits this path. Editor preview
-// always passes a real VITE_INPUT_URL, so this is a dev/last-resort fallback.
 const FALLBACK_VIDEO_URL =
   "https://cdn.vincentt.studio/assets/preview/v2/videos/Head_tilt_woman.mp4";
 
-/**
- * Picks the media source and starts the XR session. Runs once on mount.
- *
- * VITE_INPUT_SOURCE controls the source:
- *   - "webcam" (default): live getUserMedia
- *   - "video": loop VITE_INPUT_URL (or FALLBACK_VIDEO_URL if unset)
- *   - "photo": draw VITE_INPUT_URL to a canvas as a static 1-frame stream
- *
- * Photo/video sources are pre-mirrored to cancel the SDK's selfie flip.
- */
 const MediaSourceBinder = () => {
   const { session } = useXRContext();
 
@@ -52,11 +35,13 @@ const MediaSourceBinder = () => {
         video.autoplay = true;
         video.playsInline = true;
         await video.play();
+
         const canvas = document.createElement("canvas");
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         const ctx = canvas.getContext("2d");
         if (!ctx) throw new Error("2d canvas context unavailable");
+
         const draw = () => {
           if (cancelled) return;
           ctx.save();
@@ -66,8 +51,11 @@ const MediaSourceBinder = () => {
           rafId = requestAnimationFrame(draw);
         };
         draw();
+
         const stream = (
-          canvas as HTMLCanvasElement & { captureStream: (fps?: number) => MediaStream }
+          canvas as HTMLCanvasElement & {
+            captureStream: (fps?: number) => MediaStream;
+          }
         ).captureStream();
         await session.setMediaSource({ source: XRMediaSource.STREAM, stream });
       } else if (inputSource === "photo" && inputUrl) {
@@ -78,6 +66,7 @@ const MediaSourceBinder = () => {
           img.onerror = () => reject(new Error(`failed to load ${inputUrl}`));
           img.src = inputUrl;
         });
+
         const canvas = document.createElement("canvas");
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
@@ -85,6 +74,7 @@ const MediaSourceBinder = () => {
         if (!ctx) throw new Error("2d canvas context unavailable");
         ctx.scale(-1, 1);
         ctx.drawImage(img, -canvas.width, 0);
+
         const stream = (
           canvas as HTMLCanvasElement & {
             captureStream: (frameRate?: number) => MediaStream;
@@ -105,7 +95,7 @@ const MediaSourceBinder = () => {
       cancelled = true;
       if (rafId) cancelAnimationFrame(rafId);
     };
-    // Runs once — session is stable for the app's lifetime.
+    // Runs once; session is stable for the app lifetime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -137,36 +127,37 @@ const Loading = ({ shouldFadeOut }: { shouldFadeOut: boolean }) => (
 const CameraError = () => {
   const xrError = useXRError();
   return (
-  <div className="flex w-full h-full flex-col items-center justify-center gap-4 bg-[var(--color-bg-app)] text-[var(--color-fg-app)] px-8 text-center">
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="h-12 w-12 text-[var(--color-fg-muted)]"
-      aria-hidden="true"
-    >
-      <path d="M2 2l20 20" />
-      <path d="M15 7h2a2 2 0 0 1 2 2v2m-2 6H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h2" />
-      <path d="M9.5 9.5a3 3 0 0 0 4.2 4.2" />
-    </svg>
-    <div className="flex flex-col items-center gap-1">
-      <div className="text-base font-medium tracking-wide">
-        Camera unavailable
-      </div>
-      <div className="text-sm text-[var(--color-fg-muted)] max-w-xs">
-        {xrError?.message ||
-          "Allow camera access in your browser, then refresh the page."}
+    <div className="flex w-full h-full flex-col items-center justify-center gap-4 bg-[var(--color-bg-app)] text-[var(--color-fg-app)] px-8 text-center">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-12 w-12 text-[var(--color-fg-muted)]"
+        aria-hidden="true"
+      >
+        <path d="M2 2l20 20" />
+        <path d="M15 7h2a2 2 0 0 1 2 2v2m-2 6H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h2" />
+        <path d="M9.5 9.5a3 3 0 0 0 4.2 4.2" />
+      </svg>
+      <div className="flex flex-col items-center gap-1">
+        <div className="text-base font-medium tracking-wide">
+          Camera unavailable
+        </div>
+        <div className="text-sm text-[var(--color-fg-muted)] max-w-xs">
+          {xrError?.message ||
+            "Allow camera access in your browser, then refresh the page."}
+        </div>
       </div>
     </div>
-  </div>
   );
 };
 
 const Shell = () => {
   const ready = useXRReady();
+
   return (
     <AspectRatioContainer>
       <XRScene
@@ -177,11 +168,6 @@ const Shell = () => {
       >
         <MediaSourceBinder />
         <PerspectiveCamera makeDefault position={[0, 0, 5]} fov={45} />
-        <VideoBackground
-          segmentationMask={undefined}
-          customBackground="#6366f1"
-          renderOrder={-999}
-        />
         <ambientLight intensity={1} />
         <directionalLight position={[5, 5, 5]} intensity={1} />
         <Scene />
