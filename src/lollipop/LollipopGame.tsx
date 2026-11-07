@@ -3,12 +3,23 @@ import { useFrame } from "@react-three/fiber";
 import { ScreenSpaceUI } from "@vincentt-xr/sdk";
 import { GestureTracker } from "@vincentt-xr/sdk/tracking";
 
-import { CandyHud, LollipopImageLayer } from "./LollipopLayer";
+import { CandyHud, type FeedbackKey } from "./CandyHud";
+import {
+  ActiveLollipop,
+  BottomFrame,
+  CandyDrops,
+  Pivot,
+  Roulette,
+  Spiral,
+  StuckLollipop,
+} from "./LollipopImages";
 import { GAME_CONFIG } from "./gameConfig";
 import { useGestureHold } from "../gesture";
-import type {
-  LollipopLayerSettings,
-  LollipopSettings,
+import {
+  LOLLIPOP_GEOMETRY,
+  type HitShape,
+  type ScreenPoint,
+  type ScreenSize,
 } from "./settings";
 
 const GAME_LOGIC_ENABLED = true;
@@ -16,9 +27,7 @@ const DEG_TO_RAD = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
 
 type GameStatus = "idle" | "running" | "ended";
-type ScreenPoint = { x: number; y: number };
-type ScreenSize = { width: number; height: number };
-type StuckLollipop = {
+type StuckLollipopState = {
   id: number;
   localAngleDeg: number;
   localRadius: number;
@@ -36,34 +45,11 @@ const audioSources = {
   victory: "/audios/Victory%202.mp3",
 } as const;
 
-const getLayerPosition = (layer: LollipopLayerSettings): ScreenPoint => {
-  const transform =
-    layer.image?.screenImage.transformation ??
-    layer.text?.screenText.transformation;
+const getLayerPosition = (shape: HitShape): ScreenPoint => shape.position;
 
-  return transform?.position ?? { x: 0, y: 0 };
-};
+const getLayerSize = (shape: HitShape): ScreenSize => shape.size;
 
-const getLayerSize = (layer: LollipopLayerSettings) => {
-  const transform =
-    layer.image?.screenImage.transformation ??
-    layer.text?.screenText.transformation;
-
-  return transform?.size ?? { width: 0.2, height: 0.2 };
-};
-
-const getLayerRotation = (layer: LollipopLayerSettings) => {
-  const transform =
-    layer.image?.screenImage.transformation ??
-    layer.text?.screenText.transformation;
-
-  return transform?.rotation ?? 0;
-};
-
-const scaleSize = (size: ScreenSize, scale: number): ScreenSize => ({
-  width: size.width * scale,
-  height: size.height * scale,
-});
+const getLayerRotation = (shape: HitShape) => shape.rotation;
 
 const rotatePoint = (point: ScreenPoint, rotationDeg: number): ScreenPoint => {
   const radians = rotationDeg * DEG_TO_RAD;
@@ -75,11 +61,6 @@ const rotatePoint = (point: ScreenPoint, rotationDeg: number): ScreenPoint => {
     y: point.x * sin + point.y * cos,
   };
 };
-
-const layerWithVisible = (
-  layer: LollipopLayerSettings,
-  visible: boolean,
-): LollipopLayerSettings => ({ ...layer, visible });
 
 const normalizeDeg = (value: number) => ((value % 360) + 360) % 360;
 
@@ -164,26 +145,24 @@ const playSound = (source: string) => {
   });
 };
 
-export const LollipopGame = ({
-  settings: initialSettings,
-}: {
-  settings: LollipopSettings;
-}) => {
-  const settings = initialSettings;
+export const LollipopGame = () => {
   const [status, setStatus] = useState<GameStatus>("idle");
   const [score, setScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState<number>(GAME_CONFIG.durationSeconds);
   const [activePosition, setActivePosition] = useState<ScreenPoint | null>(
     null,
   );
-  const [stuckLollipops, setStuckLollipops] = useState<StuckLollipop[]>([]);
+  const [stuckLollipops, setStuckLollipops] = useState<StuckLollipopState[]>([]);
   const [rouletteRotation, setRouletteRotation] = useState(0);
   const [spiralRotation, setSpiralRotation] = useState(0);
   const [animationNow, setAnimationNow] = useState(() => performance.now());
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const [feedbackVersion, setFeedbackVersion] = useState(0);
+  const [feedback, setFeedback] = useState<FeedbackKey | null>(null);
+  const [feedbackStartedAt, setFeedbackStartedAt] = useState(0);
+  const [scorePopStartedAt, setScorePopStartedAt] = useState<number | null>(null);
+  const [endedAt, setEndedAt] = useState(0);
+  const shownProgressRef = useRef(0);
   const rouletteRotationRef = useRef(0);
-  const stuckLollipopsRef = useRef<StuckLollipop[]>([]);
+  const stuckLollipopsRef = useRef<StuckLollipopState[]>([]);
   const launchRef = useRef<{
     startedAt: number;
     from: ScreenPoint;
@@ -194,10 +173,18 @@ export const LollipopGame = ({
   const scoreRef = useRef(0);
   const stuckIdRef = useRef(0);
   const feedbackTimerRef = useRef<number | null>(null);
-  const { layers } = settings;
+  const layers = LOLLIPOP_GEOMETRY;
 
   useEffect(() => {
     scoreRef.current = score;
+  }, [score]);
+
+  // The old score card popped when its first point arrived (the CSS class went on).
+  const previousScoreRef = useRef(0);
+  useEffect(() => {
+    if (previousScoreRef.current === 0 && score > 0) setScorePopStartedAt(performance.now());
+    if (score === 0) setScorePopStartedAt(null);
+    previousScoreRef.current = score;
   }, [score]);
 
   useEffect(() => {
@@ -215,10 +202,6 @@ export const LollipopGame = ({
   const roulettePosition = useMemo(
     () => getLayerPosition(layers.roulette),
     [layers.roulette],
-  );
-  const activeLollipopSize = useMemo(
-    () => getLayerSize(layers.activeLollipop),
-    [layers.activeLollipop],
   );
   const targetLollipopRotation = useMemo(
     () => getLayerRotation(layers.targetLollipop),
@@ -247,10 +230,6 @@ export const LollipopGame = ({
       targetLollipopRotation,
       targetPosition,
     ],
-  );
-  const rouletteSize = useMemo(
-    () => getLayerSize(layers.roulette),
-    [layers.roulette],
   );
   const hitWorldAngle = useMemo(
     () => angleBetween(roulettePosition, targetPosition),
@@ -291,9 +270,9 @@ export const LollipopGame = ({
     }
   }, [activeStartPosition]);
 
-  const showFeedback = useCallback((message: string) => {
+  const showFeedback = useCallback((message: FeedbackKey) => {
     setFeedback(message);
-    setFeedbackVersion((version) => version + 1);
+    setFeedbackStartedAt(performance.now());
     if (feedbackTimerRef.current !== null) window.clearTimeout(feedbackTimerRef.current);
     // Feedback is presentation-only; it expires without changing gameplay.
     feedbackTimerRef.current = window.setTimeout(() => {
@@ -306,6 +285,7 @@ export const LollipopGame = ({
     (result?: "win" | "lose") => {
       const won = result ? result === "win" : scoreRef.current >= GAME_CONFIG.targetScore;
       setStatus("ended");
+      setEndedAt(performance.now());
       setTimeLeft(0);
       setActivePosition(activeStartPosition);
       launchRef.current = null;
@@ -339,6 +319,9 @@ export const LollipopGame = ({
     if (!GAME_LOGIC_ENABLED) return;
 
     setAnimationNow(performance.now());
+    // The progress bars ease toward the score (the old CSS width transition, 400 ms).
+    const targetProgress = Math.min(1, scoreRef.current / GAME_CONFIG.targetScore);
+    shownProgressRef.current += (targetProgress - shownProgressRef.current) * Math.min(1, delta * 10);
 
     if (status === "running") {
       const nextRouletteRotation = normalizeDeg(
@@ -392,7 +375,7 @@ export const LollipopGame = ({
     });
 
     if (collided) {
-      showFeedback("Too close!");
+      showFeedback("tooClose");
       endGame("lose");
       return;
     }
@@ -415,9 +398,9 @@ export const LollipopGame = ({
     const nextScore = scoreRef.current + 1;
     scoreRef.current = nextScore;
     setScore(nextScore);
-    let hitFeedback = "Nice!";
-    if (nextScore >= 5) hitFeedback = "Sweet!";
-    if (nextScore >= GAME_CONFIG.targetScore) hitFeedback = "Perfect!";
+    let hitFeedback: FeedbackKey = "nice";
+    if (nextScore >= 5) hitFeedback = "sweet";
+    if (nextScore >= GAME_CONFIG.targetScore) hitFeedback = "perfect";
     showFeedback(hitFeedback);
     playSound(audioSources.hit);
 
@@ -483,7 +466,7 @@ export const LollipopGame = ({
       id: lollipop.id,
       position: polarPoint(roulettePosition, lollipop.localRadius, worldAngle),
       rotation: lollipopRotationForAngle(worldAngle),
-      size: scaleSize(activeLollipopSize, snapScale),
+      scale: snapScale,
     };
   });
   const activeBasePosition = activePosition ?? activeStartPosition;
@@ -496,47 +479,54 @@ export const LollipopGame = ({
     y: activeBasePosition.y + activeBobbing,
   };
   const roulettePulse = 1 + Math.sin(animationNow / 680) * 0.012;
-  const activeLayer = layerWithVisible(layers.activeLollipop, status !== "ended");
-  const stuckLayer = layerWithVisible(
-    layers.targetLollipop,
-    stuckLollipops.length > 0,
-  );
+  const activeAt = layers.activeLollipop.position;
+  const stuckAt = layers.targetLollipop.position;
 
   return (
     <>
       <GestureTracker />
       <ScreenSpaceUI>
-        <LollipopImageLayer
-          layer={activeLayer}
-          position={activeDisplayPosition}
-        />
+        <Pivot
+          at={activeAt}
+          offset={{ x: activeDisplayPosition.x - activeAt.x, y: activeDisplayPosition.y - activeAt.y }}
+        >
+          <ActiveLollipop visible={status !== "ended"} />
+        </Pivot>
         {renderedStuckLollipops.map((lollipop) => (
-          <LollipopImageLayer
+          // The picture already points as the target does (180 degrees), so the
+          // group turns it only by the difference.
+          <Pivot
             key={lollipop.id}
-            layer={stuckLayer}
-            position={lollipop.position}
-            rotation={lollipop.rotation}
-            size={lollipop.size}
-          />
+            at={stuckAt}
+            offset={{ x: lollipop.position.x - stuckAt.x, y: lollipop.position.y - stuckAt.y }}
+            rotation={lollipop.rotation - layers.targetLollipop.rotation}
+            scale={lollipop.scale}
+          >
+            <StuckLollipop />
+          </Pivot>
         ))}
-        <LollipopImageLayer
-          layer={layers.roulette}
-          rotation={rouletteRotation}
-          size={scaleSize(rouletteSize, roulettePulse)}
+        <Pivot at={layers.roulette.position} rotation={rouletteRotation} scale={roulettePulse}>
+          <Roulette />
+        </Pivot>
+        <Pivot at={layers.spiral.position} rotation={spiralRotation}>
+          <Spiral />
+        </Pivot>
+        <BottomFrame />
+        <CandyDrops />
+        <CandyHud
+          status={status}
+          score={score}
+          targetScore={GAME_CONFIG.targetScore}
+          timeLeft={timeLeft}
+          urgent={status === "running" && timeLeft <= GAME_CONFIG.hud.timerUrgencySeconds}
+          progress={shownProgressRef.current}
+          feedback={feedback}
+          feedbackStartedAt={feedbackStartedAt}
+          scorePopStartedAt={scorePopStartedAt}
+          endedAt={endedAt}
+          now={animationNow}
         />
-        <LollipopImageLayer layer={layers.spiral} rotation={spiralRotation} />
-        <LollipopImageLayer layer={layers.bottomFrame} />
-        <LollipopImageLayer layer={layers.leftBranch} />
       </ScreenSpaceUI>
-      <CandyHud
-        status={status}
-        score={score}
-        targetScore={GAME_CONFIG.targetScore}
-        timeLeft={timeLeft}
-        feedback={feedback}
-        feedbackVersion={feedbackVersion}
-        animationNow={animationNow}
-      />
     </>
   );
 };
